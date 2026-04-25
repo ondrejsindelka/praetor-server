@@ -1,8 +1,8 @@
-version: "3.9"
-
+# Dev-only stack. NOT for production.
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: praetor
       POSTGRES_PASSWORD: praetor
@@ -19,34 +19,27 @@ services:
 
   victoriametrics:
     image: victoriametrics/victoria-metrics:latest
+    restart: unless-stopped
     ports:
       - "8428:8428"
     volumes:
-      - vm_data:/victoria-metrics-data
+      - vm_data:/storage
     command:
-      - "-retentionPeriod=90d"
-      - "-storageDataPath=/victoria-metrics-data"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8428/-/healthy"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - "-storageDataPath=/storage"
+      - "-retentionPeriod=12"
 
   loki:
     image: grafana/loki:latest
+    restart: unless-stopped
     ports:
       - "3100:3100"
     volumes:
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3100/ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   grafana:
     image: grafana/grafana:latest
+    restart: unless-stopped
     ports:
       - "3000:3000"
     volumes:
@@ -56,8 +49,12 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
     depends_on:
-      - victoriametrics
-      - loki
+      postgres:
+        condition: service_healthy
+      victoriametrics:
+        condition: service_started
+      loki:
+        condition: service_started
 
 volumes:
   postgres_data:

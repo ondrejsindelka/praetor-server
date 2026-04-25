@@ -31,25 +31,26 @@ func main() {
 		logger.Error("failed to load config", "err", err)
 		os.Exit(1)
 	}
-
-	logger.Info("config loaded",
-		"grpc_listen", cfg.GRPCListen,
-		"http_listen", cfg.HTTPListen,
-	)
+	logger.Info("config loaded", "grpc_listen", cfg.GRPCListen, "http_listen", cfg.HTTPListen)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := db.New(ctx, cfg.PostgresDSN)
+	pool, err := db.Connect(ctx, cfg.PostgresDSN)
 	if err != nil {
 		logger.Error("failed to connect to postgres", "err", err)
 		os.Exit(1)
 	}
-	defer pool.Close()
-	logger.Info("postgres connected")
+	defer db.Close(pool)
 
-	// TODO M1.3: initialize gRPC server (Enroll + Connect handlers)
-	// TODO M1.3: initialize REST API server (GET /v1/hosts)
+	if err := db.Migrate(ctx, pool, db.Migrations); err != nil {
+		logger.Error("database migration failed", "err", err)
+		os.Exit(1)
+	}
+	logger.Info("database ready, migrations applied")
+
+	// TODO M1.3: start gRPC server on cfg.GRPCListen (Enroll + Connect handlers)
+	// TODO M1.3: start HTTP server on cfg.HTTPListen (REST API)
 	// TODO M2: initialize VictoriaMetrics writer
 	// TODO M2: initialize Loki writer
 

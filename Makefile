@@ -25,7 +25,7 @@ clean:
 	rm -rf $(BIN_DIR) tmp coverage.out
 
 # --- Docker Compose ---
-.PHONY: compose-up compose-down compose-ps compose-logs
+.PHONY: compose-up compose-down compose-ps compose-logs compose-reset db-shell
 
 compose-up:
 	docker compose up -d
@@ -38,6 +38,12 @@ compose-ps:
 
 compose-logs:
 	docker compose logs -f
+
+compose-reset:
+	docker compose down -v
+
+db-shell:
+	docker compose exec postgres psql -U praetor
 
 # --- Migrations ---
 .PHONY: migrate-up migrate-down migrate-status

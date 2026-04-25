@@ -71,5 +71,5 @@ jobs:
 
       - name: Integration tests
         env:
-          TEST_POSTGRES_DSN: postgres://praetor:praetor@localhost:5432/praetor?sslmode=disable
-        run: go test -v -tags integration ./internal/db/...
+          PRAETOR_TEST_DSN: postgres://praetor:praetor@localhost:5432/praetor?sslmode=disable
+        run: go test -tags=integration -race ./...
