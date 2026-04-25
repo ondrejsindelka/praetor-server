@@ -62,7 +62,7 @@ func runMigrate(args []string) {
 	}
 	defer db.Close(pool)
 
-	sqlDB := stdlib.OpenDB(*pool.Config().ConnConfig)
+	sqlDB := stdlib.OpenDBFromPool(pool)
 	defer sqlDB.Close()
 
 	goose.SetBaseFS(db.Migrations)

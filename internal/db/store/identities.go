@@ -88,13 +88,16 @@ func (s *IdentityStore) GetCurrentByHostID(ctx context.Context, hostID string) (
 
 // Revoke marks an identity as revoked with the given reason.
 func (s *IdentityStore) Revoke(ctx context.Context, id int64, reason string) error {
-	_, err := s.pool.Exec(ctx, `
+	tag, err := s.pool.Exec(ctx, `
 		UPDATE agent_identities
 		SET revoked_at = NOW(), revoked_reason = $2
 		WHERE id = $1 AND revoked_at IS NULL`,
 		id, reason)
 	if err != nil {
 		return fmt.Errorf("identities: revoke: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("identities: %d not found or already revoked", id)
 	}
 	return nil
 }

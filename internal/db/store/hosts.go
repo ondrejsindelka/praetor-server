@@ -76,7 +76,7 @@ func (s *HostStore) Upsert(ctx context.Context, h *Host) error {
 	}
 	_, err = s.pool.Exec(ctx, upsertHostSQL,
 		h.ID, h.Hostname, h.OS, h.OSVersion, h.Kernel, h.Arch,
-		h.CPUCores, h.MemoryBytes, h.MachineID, ipJSON, labelsJSON,
+		h.CPUCores, h.MemoryBytes, h.MachineID, json.RawMessage(ipJSON), json.RawMessage(labelsJSON),
 		h.LastHeartbeatAt, h.Status, h.AgentVersion, h.OrgID,
 	)
 	if err != nil {
@@ -153,10 +153,14 @@ func scanHost(row pgx.Row) (*Host, error) {
 		return nil, fmt.Errorf("hosts: scan: %w", err)
 	}
 	if len(ipJSON) > 0 {
-		_ = json.Unmarshal(ipJSON, &h.IPAddresses)
+		if err := json.Unmarshal(ipJSON, &h.IPAddresses); err != nil {
+			return nil, fmt.Errorf("hosts: unmarshal ip_addresses: %w", err)
+		}
 	}
 	if len(labelsJSON) > 0 {
-		_ = json.Unmarshal(labelsJSON, &h.Labels)
+		if err := json.Unmarshal(labelsJSON, &h.Labels); err != nil {
+			return nil, fmt.Errorf("hosts: unmarshal labels: %w", err)
+		}
 	}
 	return &h, nil
 }

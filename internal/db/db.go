@@ -40,7 +40,7 @@ func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 
 // Migrate runs all pending goose Up migrations from the provided embedded FS.
 func Migrate(ctx context.Context, pool *pgxpool.Pool, fs embed.FS) error {
-	sqlDB := stdlib.OpenDB(*pool.Config().ConnConfig)
+	sqlDB := stdlib.OpenDBFromPool(pool)
 	defer sqlDB.Close()
 
 	goose.SetBaseFS(fs)

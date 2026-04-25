@@ -54,6 +54,7 @@ func TestMigrateAndStores(t *testing.T) {
 		if err := hs.Upsert(ctx, h); err != nil {
 			t.Fatalf("Upsert: %v", err)
 		}
+		t.Cleanup(func() { pool.Exec(ctx, "DELETE FROM hosts WHERE id = $1", h.ID) })
 
 		got, err := hs.GetByID(ctx, h.ID)
 		if err != nil {
@@ -65,8 +66,6 @@ func TestMigrateAndStores(t *testing.T) {
 		if len(got.IPAddresses) != 1 || got.IPAddresses[0] != "192.168.1.1" {
 			t.Errorf("ip_addresses: got %v", got.IPAddresses)
 		}
-
-		pool.Exec(ctx, "DELETE FROM hosts WHERE id = $1", h.ID)
 	})
 
 	t.Run("enrollment_token_lifecycle", func(t *testing.T) {
@@ -83,6 +82,7 @@ func TestMigrateAndStores(t *testing.T) {
 		if err := ts.Insert(ctx, tok); err != nil {
 			t.Fatalf("Insert: %v", err)
 		}
+		t.Cleanup(func() { pool.Exec(ctx, "DELETE FROM enrollment_tokens WHERE id = $1", tok.ID) })
 
 		got, err := ts.GetByID(ctx, tok.ID)
 		if err != nil {
@@ -104,7 +104,65 @@ func TestMigrateAndStores(t *testing.T) {
 		if revoked.RevokedAt == nil {
 			t.Error("expected revoked_at to be set")
 		}
+	})
 
-		pool.Exec(ctx, "DELETE FROM enrollment_tokens WHERE id = $1", tok.ID)
+	t.Run("identity_lifecycle", func(t *testing.T) {
+		hs := store.NewHostStore(pool)
+		is := store.NewIdentityStore(pool)
+
+		osVer := "6.1.0"
+		h := &store.Host{
+			ID:       "01HZ000000000000000000003",
+			Hostname: "identity-test-host",
+			OS:       "linux",
+			OSVersion: &osVer,
+			Arch:     "amd64",
+			Status:   "pending",
+			OrgID:    "default",
+		}
+		if err := hs.Upsert(ctx, h); err != nil {
+			t.Fatalf("Upsert host: %v", err)
+		}
+		t.Cleanup(func() { pool.Exec(ctx, "DELETE FROM hosts WHERE id = $1", h.ID) })
+
+		ai := &store.AgentIdentity{
+			HostID:          h.ID,
+			CertPEM:         "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----",
+			CertFingerprint: "aa:bb:cc:dd:ee:ff",
+			ExpiresAt:       time.Now().Add(24 * time.Hour),
+		}
+		if err := is.Insert(ctx, ai); err != nil {
+			t.Fatalf("Insert identity: %v", err)
+		}
+		if ai.ID == 0 {
+			t.Error("expected ai.ID to be set after Insert")
+		}
+		if ai.IssuedAt.IsZero() {
+			t.Error("expected ai.IssuedAt to be set after Insert")
+		}
+
+		byFP, err := is.GetByCertFingerprint(ctx, ai.CertFingerprint)
+		if err != nil {
+			t.Fatalf("GetByCertFingerprint: %v", err)
+		}
+		if byFP.HostID != h.ID {
+			t.Errorf("GetByCertFingerprint: got HostID %q, want %q", byFP.HostID, h.ID)
+		}
+
+		current, err := is.GetCurrentByHostID(ctx, h.ID)
+		if err != nil {
+			t.Fatalf("GetCurrentByHostID: %v", err)
+		}
+		if current.CertFingerprint != ai.CertFingerprint {
+			t.Errorf("GetCurrentByHostID: got fingerprint %q, want %q", current.CertFingerprint, ai.CertFingerprint)
+		}
+
+		if err := is.Revoke(ctx, ai.ID, "test revocation"); err != nil {
+			t.Fatalf("Revoke: %v", err)
+		}
+
+		if err := is.Revoke(ctx, ai.ID, "double revoke"); err == nil {
+			t.Error("expected error on double-revoke, got nil")
+		}
 	})
 }
