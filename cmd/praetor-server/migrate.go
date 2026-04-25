@@ -7,19 +7,19 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
+
 	"github.com/ondrejsindelka/praetor-server/internal/config"
 	"github.com/ondrejsindelka/praetor-server/internal/db"
 )
 
 // runMigrate handles the `migrate` subcommand.
-// Usage: praetor-server migrate [up|down|status] [--config path]
-// Flags and the direction argument may appear in any order.
+// Usage: praetor-server migrate [up|down|status|version] [--config path]
 func runMigrate(args []string) {
 	fs := flag.NewFlagSet("migrate", flag.ExitOnError)
 	cfgPath := fs.String("config", "/etc/praetor/server.yaml", "path to server config file")
 
-	// Separate flag args from positional args so that the direction word
-	// (e.g. "up") may appear before or after --config.
 	var flagArgs, posArgs []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -55,14 +55,37 @@ func runMigrate(args []string) {
 	}
 
 	ctx := context.Background()
-	pool, err := db.New(ctx, cfg.PostgresDSN)
+	pool, err := db.Connect(ctx, cfg.PostgresDSN)
 	if err != nil {
 		logger.Error("failed to connect to postgres", "err", err)
 		os.Exit(1)
 	}
-	defer pool.Close()
+	defer db.Close(pool)
 
-	if err := db.Migrate(ctx, pool, direction); err != nil {
+	sqlDB := stdlib.OpenDBFromPool(pool)
+	defer sqlDB.Close()
+
+	goose.SetBaseFS(db.Migrations)
+	if err := goose.SetDialect("postgres"); err != nil {
+		logger.Error("set dialect", "err", err)
+		os.Exit(1)
+	}
+
+	switch direction {
+	case "up":
+		err = goose.UpContext(ctx, sqlDB, "migrations")
+	case "down":
+		err = goose.DownContext(ctx, sqlDB, "migrations")
+	case "status":
+		err = goose.Status(sqlDB, "migrations")
+	case "version":
+		err = goose.Version(sqlDB, "migrations")
+	default:
+		fmt.Fprintf(os.Stderr, "unknown subcommand %q — use: up, down, status, version\n", direction)
+		os.Exit(1)
+	}
+
+	if err != nil {
 		logger.Error("migration failed", "direction", direction, "err", err)
 		os.Exit(1)
 	}
