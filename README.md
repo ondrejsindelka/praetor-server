@@ -101,6 +101,43 @@ Services:
 - Loki: `http://localhost:3100`
 - Grafana: `http://localhost:3000` (anonymous admin, no login required)
 
+## Issuing enrollment tokens
+
+Before an agent can connect, issue an enrollment token:
+
+```sh
+make token-issue LABEL="prod-db cluster"
+```
+
+Or with explicit flags:
+
+```sh
+./bin/praetor-server token issue \
+  --label "prod-db cluster" \
+  --ttl 15m \
+  --config examples/server.yaml
+```
+
+List active tokens:
+
+```sh
+./bin/praetor-server token list --config examples/server.yaml
+```
+
+Revoke a token:
+
+```sh
+./bin/praetor-server token revoke <id> --config examples/server.yaml
+```
+
+## CA initialization
+
+On first start, `praetor-server` creates a root CA and server certificate in `data_dir/ca/`
+(default `./tmp/data/ca/`). This directory contains the **root CA private key** — back it up
+to offline storage. If lost, all agent certificates must be reissued.
+
+> **Security note:** `data_dir/ca/root.key` has mode `0400`. Never commit it to version control.
+
 ## Milestones
 
 - **M0** (current) — scaffolding: module layout, config loader, placeholder

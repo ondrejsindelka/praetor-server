@@ -7,7 +7,7 @@ VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "
 LDFLAGS    := -s -w -X main.version=$(VERSION)
 GOFLAGS    := CGO_ENABLED=0
 
-.PHONY: build test lint run-dev clean
+.PHONY: build test lint run-dev clean token-issue enroll-smoke-test
 
 build:
 	$(GOFLAGS) go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD)
@@ -44,6 +44,18 @@ compose-reset:
 
 db-shell:
 	docker compose exec postgres psql -U praetor
+
+# --- Token management ---
+token-issue: build
+	$(BIN_DIR)/$(BINARY) token issue --label "$(LABEL)" --config examples/server.yaml --ttl 15m
+
+enroll-smoke-test: build
+	@echo "Starting enrollment smoke test..."
+	@mkdir -p tmp/data
+	$(BIN_DIR)/$(BINARY) migrate up --config examples/server.yaml
+	$(BIN_DIR)/$(BINARY) token issue --label "smoke-test" --config examples/server.yaml --ttl 15m
+	@echo "Token issued. Run integration tests for full enrollment flow:"
+	@echo "  TEST_POSTGRES_DSN=... go test -v -tags integration ./internal/enrollment/..."
 
 # --- Migrations ---
 .PHONY: migrate-up migrate-down migrate-status
