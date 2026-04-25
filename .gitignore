@@ -3,3 +3,4 @@ tmp/
 coverage.out
 *.test
 .DS_Store
+.worktrees/

@@ -23,3 +23,30 @@ run-dev:
 
 clean:
 	rm -rf $(BIN_DIR) tmp coverage.out
+
+# --- Docker Compose ---
+.PHONY: compose-up compose-down compose-ps compose-logs
+
+compose-up:
+	docker compose up -d
+
+compose-down:
+	docker compose down
+
+compose-ps:
+	docker compose ps
+
+compose-logs:
+	docker compose logs -f
+
+# --- Migrations ---
+.PHONY: migrate-up migrate-down migrate-status
+
+migrate-up: build
+	$(BIN_DIR)/$(BINARY) migrate up --config examples/server.yaml
+
+migrate-down: build
+	$(BIN_DIR)/$(BINARY) migrate down --config examples/server.yaml
+
+migrate-status: build
+	$(BIN_DIR)/$(BINARY) migrate status --config examples/server.yaml
