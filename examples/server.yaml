@@ -1,0 +1,5 @@
+grpc_listen: :8443
+http_listen: :8080
+postgres_dsn: postgres://praetor:praetor@localhost:5432/praetor?sslmode=disable
+victoriametrics_url: http://localhost:8428
+loki_url: http://localhost:3100
