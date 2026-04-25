@@ -10,11 +10,13 @@ import (
 
 // Config holds the server configuration loaded from YAML.
 type Config struct {
-	GRPCListen         string `yaml:"grpc_listen"`
-	HTTPListen         string `yaml:"http_listen"`
-	PostgresDSN        string `yaml:"postgres_dsn"`
-	VictoriaMetricsURL string `yaml:"victoriametrics_url"`
-	LokiURL            string `yaml:"loki_url"`
+	GRPCListen         string   `yaml:"grpc_listen"`
+	HTTPListen         string   `yaml:"http_listen"`
+	PostgresDSN        string   `yaml:"postgres_dsn"`
+	VictoriaMetricsURL string   `yaml:"victoriametrics_url"`
+	LokiURL            string   `yaml:"loki_url"`
+	DataDir            string   `yaml:"data_dir"`
+	GRPCServerDNSNames []string `yaml:"grpc_server_dns_names"`
 }
 
 // Load reads the YAML file at path, applies defaults, and validates required fields.
@@ -37,6 +39,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.HTTPListen == "" {
 		cfg.HTTPListen = ":8080"
+	}
+	if cfg.DataDir == "" {
+		cfg.DataDir = "./tmp/data"
+	}
+	if len(cfg.GRPCServerDNSNames) == 0 {
+		cfg.GRPCServerDNSNames = []string{"localhost"}
 	}
 
 	if cfg.PostgresDSN == "" {
