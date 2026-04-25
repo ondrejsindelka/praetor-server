@@ -9,12 +9,17 @@ import (
 	"syscall"
 
 	"github.com/ondrejsindelka/praetor-server/internal/config"
+	"github.com/ondrejsindelka/praetor-server/internal/db"
 )
 
-// version is set at build time via -ldflags.
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		runMigrate(os.Args[2:])
+		return
+	}
+
 	cfgPath := flag.String("config", "/etc/praetor/server.yaml", "path to server config file")
 	flag.Parse()
 
@@ -35,11 +40,18 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// TODO M1: open Postgres connection pool from cfg.PostgresDSN
-	// TODO M1: initialize VictoriaMetrics writer from cfg.VictoriaMetricsURL
-	// TODO M1: initialize Loki writer from cfg.LokiURL
-	// TODO M1: start gRPC server on cfg.GRPCListen (Enroll + Connect handlers)
-	// TODO M1: start HTTP server on cfg.HTTPListen (REST API)
+	pool, err := db.New(ctx, cfg.PostgresDSN)
+	if err != nil {
+		logger.Error("failed to connect to postgres", "err", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+	logger.Info("postgres connected")
+
+	// TODO M1.3: initialize gRPC server (Enroll + Connect handlers)
+	// TODO M1.3: initialize REST API server (GET /v1/hosts)
+	// TODO M2: initialize VictoriaMetrics writer
+	// TODO M2: initialize Loki writer
 
 	<-ctx.Done()
 	logger.Info("shutting down praetor-server")

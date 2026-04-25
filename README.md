@@ -69,6 +69,38 @@ loki_url: http://localhost:3100                              # log storage
 `postgres_dsn`, `victoriametrics_url`, and `loki_url` are required.
 `grpc_listen` defaults to `:8443`; `http_listen` defaults to `:8080`.
 
+## Dev stack
+
+Start the full dev stack (Postgres, VictoriaMetrics, Loki, Grafana):
+
+```sh
+make compose-up
+```
+
+Apply database migrations:
+
+```sh
+make migrate-up
+```
+
+Check migration status:
+
+```sh
+make migrate-status
+```
+
+Stop the dev stack:
+
+```sh
+make compose-down
+```
+
+Services:
+- Postgres: `localhost:5432` (user/pass/db: `praetor`)
+- VictoriaMetrics: `http://localhost:8428`
+- Loki: `http://localhost:3100`
+- Grafana: `http://localhost:3000` (anonymous admin, no login required)
+
 ## Milestones
 
 - **M0** (current) — scaffolding: module layout, config loader, placeholder
