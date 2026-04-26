@@ -23,6 +23,7 @@ import (
 	"github.com/ondrejsindelka/praetor-server/internal/agent"
 	"github.com/ondrejsindelka/praetor-server/internal/api"
 	"github.com/ondrejsindelka/praetor-server/internal/ca"
+	"github.com/ondrejsindelka/praetor-server/internal/command"
 	"github.com/ondrejsindelka/praetor-server/internal/config"
 	"github.com/ondrejsindelka/praetor-server/internal/configpush"
 	"github.com/ondrejsindelka/praetor-server/internal/db"
@@ -88,7 +89,9 @@ func main() {
 	registry := stream.NewRegistry()
 	configStore := store.NewConfigStore(pool)
 	pushSvc := configpush.New(configStore, registry, logger)
-	connectHandler := stream.NewHandler(registry, store.NewHostStore(pool), vmWriter, lokiWriter, pushSvc, logger)
+	commandStore := store.NewCommandStore(pool)
+	broker := command.NewBroker(commandStore, stream.NewRegistryBrokerAdapter(registry), logger)
+	connectHandler := stream.NewHandler(registry, store.NewHostStore(pool), vmWriter, lokiWriter, pushSvc, broker, logger)
 	enrollSvc := enrollment.New(pool, serverCA, logger)
 	agentSvc := agent.New(enrollSvc, connectHandler)
 
@@ -115,6 +118,8 @@ func main() {
 	apiHandler := api.NewHandler(
 		store.NewHostStore(pool),
 		store.NewTokenStore(pool),
+		broker,
+		commandStore,
 		cfg.APIKey,
 		cfg.OrgID,
 		logger,

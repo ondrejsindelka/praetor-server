@@ -15,6 +15,7 @@ import (
 
 	praetorv1 "github.com/ondrejsindelka/praetor-proto/gen/go/praetor/v1"
 
+	"github.com/ondrejsindelka/praetor-server/internal/command"
 	"github.com/ondrejsindelka/praetor-server/internal/configpush"
 	"github.com/ondrejsindelka/praetor-server/internal/db/store"
 	"github.com/ondrejsindelka/praetor-server/internal/storage/loki"
@@ -31,17 +32,19 @@ type Handler struct {
 	vm         *victoriametrics.Writer
 	loki       *loki.Writer
 	configPush *configpush.Service
+	broker     *command.Broker
 	logger     *slog.Logger
 }
 
 // NewHandler creates a Connect stream handler.
-func NewHandler(registry *Registry, hosts *store.HostStore, vm *victoriametrics.Writer, lokiWriter *loki.Writer, pushSvc *configpush.Service, logger *slog.Logger) *Handler {
+func NewHandler(registry *Registry, hosts *store.HostStore, vm *victoriametrics.Writer, lokiWriter *loki.Writer, pushSvc *configpush.Service, broker *command.Broker, logger *slog.Logger) *Handler {
 	return &Handler{
 		registry:   registry,
 		hosts:      hosts,
 		vm:         vm,
 		loki:       lokiWriter,
 		configPush: pushSvc,
+		broker:     broker,
 		logger:     logger,
 	}
 }
@@ -148,6 +151,13 @@ func (h *Handler) handleMessage(stream AgentStream, hostID string, msg *praetorv
 		return nil
 	case *praetorv1.AgentMessage_ConfigAck:
 		h.configPush.HandleAck(hostID, p.ConfigAck)
+		return nil
+	case *praetorv1.AgentMessage_CommandResult:
+		go func() {
+			ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			h.broker.HandleResult(ctx2, p.CommandResult)
+		}()
 		return nil
 	default:
 		h.logger.Warn("unknown agent message type", "host_id", hostID)

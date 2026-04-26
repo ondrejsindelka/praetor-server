@@ -6,6 +6,8 @@ import (
 
 	praetorv1 "github.com/ondrejsindelka/praetor-proto/gen/go/praetor/v1"
 	"google.golang.org/grpc"
+
+	"github.com/ondrejsindelka/praetor-server/internal/command"
 )
 
 // AgentStream is the server-side handle to a connected agent's bidi stream.
@@ -50,4 +52,25 @@ func (r *Registry) Count() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.streams)
+}
+
+// GetSender returns the AgentSender for hostID, satisfying command.StreamRegistry.
+func (r *Registry) GetSender(hostID string) (command.AgentSender, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	s, ok := r.streams[hostID]
+	return s, ok
+}
+
+// RegistryBrokerAdapter wraps Registry to implement command.StreamRegistry.
+type RegistryBrokerAdapter struct{ r *Registry }
+
+// NewRegistryBrokerAdapter returns a command.StreamRegistry backed by r.
+func NewRegistryBrokerAdapter(r *Registry) *RegistryBrokerAdapter {
+	return &RegistryBrokerAdapter{r: r}
+}
+
+// Get implements command.StreamRegistry.
+func (a *RegistryBrokerAdapter) Get(hostID string) (command.AgentSender, bool) {
+	return a.r.GetSender(hostID)
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	praetorv1 "github.com/ondrejsindelka/praetor-proto/gen/go/praetor/v1"
 	"github.com/ondrejsindelka/praetor-server/internal/db/store"
 )
 
@@ -140,5 +141,77 @@ func toTokenResponse(t *store.EnrollmentToken) TokenResponse {
 		UsedAt:       t.UsedAt,
 		UsedByHostID: t.UsedByHostID,
 		RevokedAt:    t.RevokedAt,
+	}
+}
+
+// IssueCommandRequest is the body for POST /v1/commands.
+type IssueCommandRequest struct {
+	HostID         string                 `json:"host_id"`
+	Tier           int                    `json:"tier"`
+	Reason         string                 `json:"reason"`
+	IssuedBy       string                 `json:"issued_by"`
+	TimeoutSeconds int32                  `json:"timeout_seconds"`
+	Diagnostic     *DiagnosticCommandJSON `json:"diagnostic,omitempty"`
+	Shell          *ShellCommandJSON      `json:"shell,omitempty"`
+}
+
+// DiagnosticCommandJSON is the JSON representation of a DiagnosticCommand.
+type DiagnosticCommandJSON struct {
+	Check  string            `json:"check"`
+	Params map[string]string `json:"params,omitempty"`
+}
+
+// ShellCommandJSON is the JSON representation of a ShellCommand.
+type ShellCommandJSON struct {
+	Binary string   `json:"binary"`
+	Args   []string `json:"args"`
+}
+
+// CommandResponse is returned by GET /v1/commands/{id}.
+type CommandResponse struct {
+	ID              string     `json:"id"`
+	HostID          string     `json:"host_id"`
+	Status          string     `json:"status"`
+	Tier            int        `json:"tier"`
+	Reason          string     `json:"reason"`
+	IssuedBy        string     `json:"issued_by"`
+	IssuedAt        time.Time  `json:"issued_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	ExitCode        *int       `json:"exit_code,omitempty"`
+	Stdout          *string    `json:"stdout,omitempty"`
+	Stderr          *string    `json:"stderr,omitempty"`
+	StdoutTruncated bool       `json:"stdout_truncated"`
+	StderrTruncated bool       `json:"stderr_truncated"`
+	DurationMs      *int64     `json:"duration_ms,omitempty"`
+	Error           *string    `json:"error,omitempty"`
+}
+
+// diagnosticCheckMap maps check name strings to DiagnosticCheck enum values.
+var diagnosticCheckMap = map[string]praetorv1.DiagnosticCheck{
+	"DISK_USAGE":          praetorv1.DiagnosticCheck_DIAGNOSTIC_CHECK_DISK_USAGE,
+	"TOP_PROCESSES":       praetorv1.DiagnosticCheck_DIAGNOSTIC_CHECK_TOP_PROCESSES,
+	"RECENT_AUTH_EVENTS":  praetorv1.DiagnosticCheck_DIAGNOSTIC_CHECK_RECENT_AUTH_EVENTS,
+	"JOURNALCTL_FOR_UNIT": praetorv1.DiagnosticCheck_DIAGNOSTIC_CHECK_JOURNALCTL_FOR_UNIT,
+	"READ_CONFIG_FILE":    praetorv1.DiagnosticCheck_DIAGNOSTIC_CHECK_READ_CONFIG_FILE,
+}
+
+// toCommandResponse converts a store.CommandExecution to a CommandResponse.
+func toCommandResponse(c *store.CommandExecution) CommandResponse {
+	return CommandResponse{
+		ID:              c.ID,
+		HostID:          c.HostID,
+		Status:          c.Status,
+		Tier:            c.Tier,
+		Reason:          c.Reason,
+		IssuedBy:        c.IssuedBy,
+		IssuedAt:        c.IssuedAt,
+		CompletedAt:     c.CompletedAt,
+		ExitCode:        c.ExitCode,
+		Stdout:          c.Stdout,
+		Stderr:          c.Stderr,
+		StdoutTruncated: c.StdoutTruncated,
+		StderrTruncated: c.StderrTruncated,
+		DurationMs:      c.DurationMs,
+		Error:           c.Error,
 	}
 }
