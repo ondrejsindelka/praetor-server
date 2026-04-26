@@ -24,6 +24,7 @@ import (
 	"github.com/ondrejsindelka/praetor-server/internal/api"
 	"github.com/ondrejsindelka/praetor-server/internal/ca"
 	"github.com/ondrejsindelka/praetor-server/internal/config"
+	"github.com/ondrejsindelka/praetor-server/internal/configpush"
 	"github.com/ondrejsindelka/praetor-server/internal/db"
 	"github.com/ondrejsindelka/praetor-server/internal/db/store"
 	"github.com/ondrejsindelka/praetor-server/internal/enrollment"
@@ -43,6 +44,9 @@ func main() {
 			return
 		case "token":
 			runToken(os.Args[2:])
+			return
+		case "config":
+			runConfigCmd(os.Args[2:])
 			return
 		}
 	}
@@ -82,7 +86,9 @@ func main() {
 	lokiWriter := lokiwriter.New(cfg.LokiURL, logger)
 
 	registry := stream.NewRegistry()
-	connectHandler := stream.NewHandler(registry, store.NewHostStore(pool), vmWriter, lokiWriter, logger)
+	configStore := store.NewConfigStore(pool)
+	pushSvc := configpush.New(configStore, registry, logger)
+	connectHandler := stream.NewHandler(registry, store.NewHostStore(pool), vmWriter, lokiWriter, pushSvc, logger)
 	enrollSvc := enrollment.New(pool, serverCA, logger)
 	agentSvc := agent.New(enrollSvc, connectHandler)
 

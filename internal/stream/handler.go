@@ -15,6 +15,7 @@ import (
 
 	praetorv1 "github.com/ondrejsindelka/praetor-proto/gen/go/praetor/v1"
 
+	"github.com/ondrejsindelka/praetor-server/internal/configpush"
 	"github.com/ondrejsindelka/praetor-server/internal/db/store"
 	"github.com/ondrejsindelka/praetor-server/internal/storage/loki"
 	"github.com/ondrejsindelka/praetor-server/internal/storage/victoriametrics"
@@ -25,21 +26,23 @@ const pingInterval = 30 * time.Second
 // Handler implements the Connect RPC.
 type Handler struct {
 	praetorv1.UnimplementedAgentServiceServer
-	registry *Registry
-	hosts    *store.HostStore
-	vm       *victoriametrics.Writer
-	loki     *loki.Writer
-	logger   *slog.Logger
+	registry   *Registry
+	hosts      *store.HostStore
+	vm         *victoriametrics.Writer
+	loki       *loki.Writer
+	configPush *configpush.Service
+	logger     *slog.Logger
 }
 
 // NewHandler creates a Connect stream handler.
-func NewHandler(registry *Registry, hosts *store.HostStore, vm *victoriametrics.Writer, lokiWriter *loki.Writer, logger *slog.Logger) *Handler {
+func NewHandler(registry *Registry, hosts *store.HostStore, vm *victoriametrics.Writer, lokiWriter *loki.Writer, pushSvc *configpush.Service, logger *slog.Logger) *Handler {
 	return &Handler{
-		registry: registry,
-		hosts:    hosts,
-		vm:       vm,
-		loki:     lokiWriter,
-		logger:   logger,
+		registry:   registry,
+		hosts:      hosts,
+		vm:         vm,
+		loki:       lokiWriter,
+		configPush: pushSvc,
+		logger:     logger,
 	}
 }
 
@@ -55,6 +58,14 @@ func (h *Handler) Connect(stream AgentStream) error {
 	defer h.registry.Remove(hostID)
 
 	h.logger.Info("agent connected", "host_id", hostID, "active_agents", h.registry.Count())
+
+	go func() {
+		ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := h.configPush.SyncOnConnect(ctx2, hostID, 0); err != nil {
+			h.logger.Warn("initial config sync failed", "host_id", hostID, "err", err)
+		}
+	}()
 
 	defer func() {
 		h.logger.Info("agent disconnected", "host_id", hostID)
@@ -134,6 +145,9 @@ func (h *Handler) handleMessage(stream AgentStream, hostID string, msg *praetorv
 				h.logger.Warn("failed to write logs to Loki", "host_id", hostID, "err", err)
 			}
 		}()
+		return nil
+	case *praetorv1.AgentMessage_ConfigAck:
+		h.configPush.HandleAck(hostID, p.ConfigAck)
 		return nil
 	default:
 		h.logger.Warn("unknown agent message type", "host_id", hostID)
