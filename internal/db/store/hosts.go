@@ -105,12 +105,13 @@ func (s *HostStore) GetByMachineID(ctx context.Context, machineID, orgID string)
 	return scanHost(row)
 }
 
-// UpdateHeartbeat stamps the host as online with the current server time.
-func (s *HostStore) UpdateHeartbeat(ctx context.Context, id, agentVersion string) error {
+// UpdateHeartbeat updates last_heartbeat_at and status for the given host.
+// t is the heartbeat timestamp (use time.Now().UTC() if not provided by the agent).
+func (s *HostStore) UpdateHeartbeat(ctx context.Context, id string, t time.Time, status string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE hosts
-		SET last_heartbeat_at = NOW(), agent_version = $2, status = 'online'
-		WHERE id = $1`, id, agentVersion)
+		SET last_heartbeat_at = $2, status = $3
+		WHERE id = $1`, id, t, status)
 	if err != nil {
 		return fmt.Errorf("hosts: update heartbeat: %w", err)
 	}
