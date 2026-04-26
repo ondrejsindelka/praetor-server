@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	praetorv1 "github.com/ondrejsindelka/praetor-proto/gen/go/praetor/v1"
+	"github.com/ondrejsindelka/praetor-server/internal/command"
 	"github.com/ondrejsindelka/praetor-server/internal/db/store"
 	"github.com/ondrejsindelka/praetor-server/internal/token"
 )
@@ -33,22 +35,34 @@ type tokenManager interface {
 	Revoke(ctx context.Context, id string) error
 }
 
+// commandIssuer is the interface the Handler uses to issue commands.
+type commandIssuer interface {
+	Issue(ctx context.Context, req command.IssueRequest) (string, error)
+}
+
+// commandGetter is the interface the Handler uses to retrieve command executions.
+type commandGetter interface {
+	Get(ctx context.Context, id string) (*store.CommandExecution, error)
+}
+
 // Handler holds dependencies for all REST handlers.
 type Handler struct {
-	hosts  hostLister
-	tokens tokenManager
-	apiKey string
-	orgID  string
-	logger *slog.Logger
+	hosts    hostLister
+	tokens   tokenManager
+	broker   commandIssuer
+	commands commandGetter
+	apiKey   string
+	orgID    string
+	logger   *slog.Logger
 }
 
 // NewHandler creates a Handler.
 // If logger is nil, slog.Default() is used.
-func NewHandler(hosts hostLister, tokens tokenManager, apiKey, orgID string, logger *slog.Logger) *Handler {
+func NewHandler(hosts hostLister, tokens tokenManager, broker commandIssuer, commands commandGetter, apiKey, orgID string, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Handler{hosts: hosts, tokens: tokens, apiKey: apiKey, orgID: orgID, logger: logger}
+	return &Handler{hosts: hosts, tokens: tokens, broker: broker, commands: commands, apiKey: apiKey, orgID: orgID, logger: logger}
 }
 
 // Routes returns an http.Handler with all routes registered.
@@ -65,6 +79,8 @@ func (h *Handler) Routes() http.Handler {
 	v1.HandleFunc("GET /v1/tokens", h.handleListTokens)
 	v1.HandleFunc("POST /v1/tokens", h.handleIssueToken)
 	v1.HandleFunc("DELETE /v1/tokens/{id}", h.handleRevokeToken)
+	v1.HandleFunc("POST /v1/commands", h.handleIssueCommand)
+	v1.HandleFunc("GET /v1/commands/{id}", h.handleGetCommand)
 
 	// CORS: deny by default — no Access-Control-Allow-Origin header set.
 	// To enable CORS for a specific origin in future, add an allowOrigins config
@@ -197,6 +213,95 @@ func (h *Handler) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleIssueCommand(w http.ResponseWriter, r *http.Request) {
+	var req IssueCommandRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if req.HostID == "" {
+		writeError(w, http.StatusBadRequest, "host_id is required")
+		return
+	}
+	if req.Reason == "" {
+		writeError(w, http.StatusBadRequest, "reason is required")
+		return
+	}
+
+	// Map tier integer to CommandTier enum.
+	var tier praetorv1.CommandTier
+	switch req.Tier {
+	case 0:
+		tier = praetorv1.CommandTier_COMMAND_TIER_0_SAFE
+	case 1:
+		tier = praetorv1.CommandTier_COMMAND_TIER_1_VALIDATED
+	default:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unsupported tier %d", req.Tier))
+		return
+	}
+
+	// Build the typed command payload.
+	var cmd interface{}
+	switch {
+	case req.Diagnostic != nil:
+		check, ok := diagnosticCheckMap[req.Diagnostic.Check]
+		if !ok {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown diagnostic check %q", req.Diagnostic.Check))
+			return
+		}
+		dc := &praetorv1.DiagnosticCommand{Check: check}
+		if len(req.Diagnostic.Params) > 0 {
+			dc.Params = req.Diagnostic.Params
+		}
+		cmd = dc
+	case req.Shell != nil:
+		if req.Shell.Binary == "" {
+			writeError(w, http.StatusBadRequest, "shell.binary is required")
+			return
+		}
+		cmd = &praetorv1.ShellCommand{Binary: req.Shell.Binary, Args: req.Shell.Args}
+	default:
+		writeError(w, http.StatusBadRequest, "one of diagnostic or shell must be specified")
+		return
+	}
+
+	id, err := h.broker.Issue(r.Context(), command.IssueRequest{
+		HostID:   req.HostID,
+		Tier:     tier,
+		Reason:   req.Reason,
+		IssuedBy: req.IssuedBy,
+		Timeout:  req.TimeoutSeconds,
+		Command:  cmd,
+	})
+	if err != nil {
+		// If the ID is set, the command was stored but the host isn't connected — still 202.
+		if id != "" {
+			h.logger.Warn("command issued but host not connected", "id", id, "err", err)
+			writeJSON(w, http.StatusAccepted, map[string]string{"id": id, "status": "pending"})
+			return
+		}
+		h.logger.Error("issue command", "err", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"id": id, "status": "pending"})
+}
+
+func (h *Handler) handleGetCommand(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	cmd, err := h.commands.Get(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("command %q not found", id))
+			return
+		}
+		h.logger.Error("get command", "id", id, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, toCommandResponse(cmd))
 }
 
 // contains checks if csv (comma-separated values) contains target.
