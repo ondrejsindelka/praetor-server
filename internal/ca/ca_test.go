@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"sync"
 	"testing"
@@ -110,6 +111,64 @@ func TestConcurrentIssuance(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+func TestServerCertSANClassification(t *testing.T) {
+	dir := t.TempDir()
+	logger := testLogger(t)
+
+	// Mixed: hostnames + IPv4 + IPv6
+	dnsNames := []string{"localhost", "10.0.0.5", "example.com", "::1"}
+	c, err := ca.New(dir, logger, dnsNames)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Get the server TLS config and inspect the certificate
+	tlsCfg := c.ServerTLSConfig()
+	if len(tlsCfg.Certificates) == 0 {
+		t.Fatal("no certificates in server TLS config")
+	}
+	leaf, err := x509.ParseCertificate(tlsCfg.Certificates[0].Certificate[0])
+	if err != nil {
+		t.Fatalf("parse server cert: %v", err)
+	}
+
+	// DNS SANs: only hostnames
+	wantDNS := map[string]bool{"localhost": true, "example.com": true}
+	for _, name := range leaf.DNSNames {
+		if !wantDNS[name] {
+			t.Errorf("unexpected DNS SAN: %q", name)
+		}
+		delete(wantDNS, name)
+	}
+	if len(wantDNS) > 0 {
+		t.Errorf("missing DNS SANs: %v", wantDNS)
+	}
+
+	// IP SANs: 127.0.0.1 (always added) + 10.0.0.5 + ::1
+	wantIPs := map[string]bool{
+		"127.0.0.1": true,
+		"10.0.0.5":  true,
+		"::1":       true,
+	}
+	for _, ip := range leaf.IPAddresses {
+		s := ip.String()
+		if !wantIPs[s] {
+			t.Errorf("unexpected IP SAN: %s", s)
+		}
+		delete(wantIPs, s)
+	}
+	if len(wantIPs) > 0 {
+		t.Errorf("missing IP SANs: %v", wantIPs)
+	}
+
+	// Verify no IP addresses leaked into DNS SANs
+	for _, name := range leaf.DNSNames {
+		if net.ParseIP(name) != nil {
+			t.Errorf("IP address %q found in DNSNames, should be in IPAddresses", name)
+		}
+	}
 }
 
 // helpers
