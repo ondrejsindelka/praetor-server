@@ -33,11 +33,12 @@ type Handler struct {
 	loki       *loki.Writer
 	configPush *configpush.Service
 	broker     *command.Broker
+	secEvents  *store.SecurityEventStore
 	logger     *slog.Logger
 }
 
 // NewHandler creates a Connect stream handler.
-func NewHandler(registry *Registry, hosts *store.HostStore, vm *victoriametrics.Writer, lokiWriter *loki.Writer, pushSvc *configpush.Service, broker *command.Broker, logger *slog.Logger) *Handler {
+func NewHandler(registry *Registry, hosts *store.HostStore, vm *victoriametrics.Writer, lokiWriter *loki.Writer, pushSvc *configpush.Service, broker *command.Broker, secEvents *store.SecurityEventStore, logger *slog.Logger) *Handler {
 	return &Handler{
 		registry:   registry,
 		hosts:      hosts,
@@ -45,6 +46,7 @@ func NewHandler(registry *Registry, hosts *store.HostStore, vm *victoriametrics.
 		loki:       lokiWriter,
 		configPush: pushSvc,
 		broker:     broker,
+		secEvents:  secEvents,
 		logger:     logger,
 	}
 }
@@ -157,6 +159,24 @@ func (h *Handler) handleMessage(stream AgentStream, hostID string, msg *praetorv
 			ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			h.broker.HandleResult(ctx2, p.CommandResult)
+		}()
+		return nil
+	case *praetorv1.AgentMessage_SecurityEvent:
+		go func() {
+			ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := h.secEvents.Insert(ctx2, p.SecurityEvent); err != nil {
+				h.logger.Warn("failed to store security event",
+					"host_id", hostID,
+					"type", p.SecurityEvent.GetType(),
+					"err", err)
+				return
+			}
+			h.logger.Info("security event stored",
+				"host_id", hostID,
+				"type", p.SecurityEvent.GetType(),
+				"source", p.SecurityEvent.GetSource(),
+			)
 		}()
 		return nil
 	default:

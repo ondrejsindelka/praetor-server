@@ -91,7 +91,8 @@ func main() {
 	pushSvc := configpush.New(configStore, registry, logger)
 	commandStore := store.NewCommandStore(pool)
 	broker := command.NewBroker(commandStore, stream.NewRegistryBrokerAdapter(registry), logger)
-	connectHandler := stream.NewHandler(registry, store.NewHostStore(pool), vmWriter, lokiWriter, pushSvc, broker, logger)
+	secEventStore := store.NewSecurityEventStore(pool)
+	connectHandler := stream.NewHandler(registry, store.NewHostStore(pool), vmWriter, lokiWriter, pushSvc, broker, secEventStore, logger)
 	enrollSvc := enrollment.New(pool, serverCA, logger)
 	agentSvc := agent.New(enrollSvc, connectHandler)
 
@@ -120,6 +121,7 @@ func main() {
 		store.NewTokenStore(pool),
 		broker,
 		commandStore,
+		secEventStore,
 		cfg.APIKey,
 		cfg.OrgID,
 		logger,

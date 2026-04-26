@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,24 +46,31 @@ type commandGetter interface {
 	Get(ctx context.Context, id string) (*store.CommandExecution, error)
 }
 
+// secEventsLister is the interface the Handler uses to list security events.
+type secEventsLister interface {
+	List(ctx context.Context, hostID string, since time.Time, limit int) ([]*store.SecurityEvent, error)
+	ListAll(ctx context.Context, since time.Time, limit int) ([]*store.SecurityEvent, error)
+}
+
 // Handler holds dependencies for all REST handlers.
 type Handler struct {
-	hosts    hostLister
-	tokens   tokenManager
-	broker   commandIssuer
-	commands commandGetter
-	apiKey   string
-	orgID    string
-	logger   *slog.Logger
+	hosts     hostLister
+	tokens    tokenManager
+	broker    commandIssuer
+	commands  commandGetter
+	secEvents secEventsLister
+	apiKey    string
+	orgID     string
+	logger    *slog.Logger
 }
 
 // NewHandler creates a Handler.
 // If logger is nil, slog.Default() is used.
-func NewHandler(hosts hostLister, tokens tokenManager, broker commandIssuer, commands commandGetter, apiKey, orgID string, logger *slog.Logger) *Handler {
+func NewHandler(hosts hostLister, tokens tokenManager, broker commandIssuer, commands commandGetter, secEvents secEventsLister, apiKey, orgID string, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Handler{hosts: hosts, tokens: tokens, broker: broker, commands: commands, apiKey: apiKey, orgID: orgID, logger: logger}
+	return &Handler{hosts: hosts, tokens: tokens, broker: broker, commands: commands, secEvents: secEvents, apiKey: apiKey, orgID: orgID, logger: logger}
 }
 
 // Routes returns an http.Handler with all routes registered.
@@ -81,6 +89,7 @@ func (h *Handler) Routes() http.Handler {
 	v1.HandleFunc("DELETE /v1/tokens/{id}", h.handleRevokeToken)
 	v1.HandleFunc("POST /v1/commands", h.handleIssueCommand)
 	v1.HandleFunc("GET /v1/commands/{id}", h.handleGetCommand)
+	v1.HandleFunc("GET /v1/security-events", h.handleListSecurityEvents)
 
 	// CORS: deny by default — no Access-Control-Allow-Origin header set.
 	// To enable CORS for a specific origin in future, add an allowOrigins config
@@ -302,6 +311,60 @@ func (h *Handler) handleGetCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toCommandResponse(cmd))
+}
+
+func (h *Handler) handleListSecurityEvents(w http.ResponseWriter, r *http.Request) {
+	const defaultLimit = 100
+	const maxLimit = 1000
+
+	q := r.URL.Query()
+
+	hostID := q.Get("host_id")
+
+	since := time.Now().Add(-24 * time.Hour)
+	if sinceStr := q.Get("since"); sinceStr != "" {
+		parsed, err := time.Parse(time.RFC3339, sinceStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "since must be an ISO8601/RFC3339 timestamp")
+			return
+		}
+		since = parsed
+	}
+
+	limit := defaultLimit
+	if limitStr := q.Get("limit"); limitStr != "" {
+		n, err := strconv.Atoi(limitStr)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
+		}
+		if n > maxLimit {
+			n = maxLimit
+		}
+		limit = n
+	}
+
+	var events []*store.SecurityEvent
+	var err error
+	if hostID != "" {
+		events, err = h.secEvents.List(r.Context(), hostID, since, limit)
+	} else {
+		events, err = h.secEvents.ListAll(r.Context(), since, limit)
+	}
+	if err != nil {
+		h.logger.Error("list security events", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	resp := make([]SecurityEventResponse, len(events))
+	for i, ev := range events {
+		resp[i] = toSecurityEventResponse(ev)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"events": resp,
+		"count":  len(resp),
+	})
 }
 
 // contains checks if csv (comma-separated values) contains target.

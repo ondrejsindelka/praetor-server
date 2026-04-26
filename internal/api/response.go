@@ -11,6 +11,34 @@ import (
 	"github.com/ondrejsindelka/praetor-server/internal/db/store"
 )
 
+// SecurityEventResponse is the JSON representation of a security event.
+type SecurityEventResponse struct {
+	ID         int64           `json:"id"`
+	HostID     string          `json:"host_id"`
+	OccurredAt time.Time       `json:"occurred_at"`
+	Type       string          `json:"type"`
+	Source     string          `json:"source"`
+	Data       json.RawMessage `json:"data"`
+	Raw        string          `json:"raw"`
+}
+
+// toSecurityEventResponse converts a store.SecurityEvent to a SecurityEventResponse.
+func toSecurityEventResponse(ev *store.SecurityEvent) SecurityEventResponse {
+	data := ev.Data
+	if data == nil {
+		data = json.RawMessage("{}")
+	}
+	return SecurityEventResponse{
+		ID:         ev.ID,
+		HostID:     ev.HostID,
+		OccurredAt: ev.OccurredAt,
+		Type:       ev.Type,
+		Source:     ev.Source,
+		Data:       data,
+		Raw:        ev.Raw,
+	}
+}
+
 // writeJSON serialises v to JSON and writes it with the given status code.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
