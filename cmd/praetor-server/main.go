@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	praetorv1 "github.com/ondrejsindelka/praetor-proto/gen/go/praetor/v1"
+
 	"github.com/ondrejsindelka/praetor-server/internal/agent"
 	"github.com/ondrejsindelka/praetor-server/internal/api"
 	"github.com/ondrejsindelka/praetor-server/internal/ca"
@@ -27,6 +28,8 @@ import (
 	"github.com/ondrejsindelka/praetor-server/internal/db/store"
 	"github.com/ondrejsindelka/praetor-server/internal/enrollment"
 	"github.com/ondrejsindelka/praetor-server/internal/staleness"
+	lokiwriter "github.com/ondrejsindelka/praetor-server/internal/storage/loki"
+	vmwriter "github.com/ondrejsindelka/praetor-server/internal/storage/victoriametrics"
 	"github.com/ondrejsindelka/praetor-server/internal/stream"
 )
 
@@ -75,8 +78,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	vmWriter := vmwriter.New(cfg.VictoriaMetricsURL, logger)
+	lokiWriter := lokiwriter.New(cfg.LokiURL, logger)
+
 	registry := stream.NewRegistry()
-	connectHandler := stream.NewHandler(registry, store.NewHostStore(pool), logger)
+	connectHandler := stream.NewHandler(registry, store.NewHostStore(pool), vmWriter, lokiWriter, logger)
 	enrollSvc := enrollment.New(pool, serverCA, logger)
 	agentSvc := agent.New(enrollSvc, connectHandler)
 
@@ -117,9 +123,6 @@ func main() {
 			logger.Error("HTTP API error", "err", err)
 		}
 	}()
-
-	// TODO M2: initialize VictoriaMetrics writer
-	// TODO M2: initialize Loki writer
 
 	<-ctx.Done()
 	logger.Info("shutting down praetor-server")

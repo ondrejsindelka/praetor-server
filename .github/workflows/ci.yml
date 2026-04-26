@@ -59,6 +59,18 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+      victoriametrics:
+        image: victoriametrics/victoria-metrics:latest
+        ports:
+          - 8428:8428
+      loki:
+        image: grafana/loki:latest
+        ports:
+          - 3100:3100
+        options: >-
+          --health-cmd "wget -qO- http://localhost:3100/ready || exit 1"
+          --health-interval 10s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -73,4 +85,6 @@ jobs:
         env:
           PRAETOR_TEST_DSN: postgres://praetor:praetor@localhost:5432/praetor?sslmode=disable
           TEST_POSTGRES_DSN: postgres://praetor:praetor@localhost:5432/praetor?sslmode=disable
+          TEST_VM_URL: http://localhost:8428
+          TEST_LOKI_URL: http://localhost:3100
         run: go test -v -tags integration -race ./internal/...
