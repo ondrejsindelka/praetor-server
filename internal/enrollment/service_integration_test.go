@@ -221,6 +221,11 @@ func TestEnrollRevokedToken(t *testing.T) {
 	}
 }
 
+// TODO: integration test for re-enrollment flow (cert-based, no token).
+// Requires an in-process gRPC server with mTLS configured so that the issued cert
+// can be fed back as the transport credential on the second Enroll() call.
+// Tracked as part of M6+ work alongside the agent-side rotation logic.
+
 func TestEnrollReEnrollmentSameMachineID(t *testing.T) {
 	svc, cleanup := setupSvc(t)
 	defer cleanup()
