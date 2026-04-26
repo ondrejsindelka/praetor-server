@@ -26,6 +26,7 @@ import (
 	"github.com/ondrejsindelka/praetor-server/internal/db"
 	"github.com/ondrejsindelka/praetor-server/internal/db/store"
 	"github.com/ondrejsindelka/praetor-server/internal/enrollment"
+	"github.com/ondrejsindelka/praetor-server/internal/staleness"
 	"github.com/ondrejsindelka/praetor-server/internal/stream"
 )
 
@@ -65,6 +66,8 @@ func main() {
 	}
 	defer db.Close(pool)
 	logger.Info("postgres connected")
+
+	go staleness.Run(ctx, pool, logger)
 
 	serverCA, err := ca.New(cfg.DataDir, logger, cfg.GRPCServerDNSNames)
 	if err != nil {
