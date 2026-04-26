@@ -49,13 +49,7 @@ func (h *Handler) Connect(stream AgentStream) error {
 
 	h.logger.Info("agent connected", "host_id", hostID, "active_agents", h.registry.Count())
 
-	// Mark host disconnected when the stream ends.
 	defer func() {
-		disconnectCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := h.hosts.UpdateHeartbeat(disconnectCtx, hostID, time.Now().UTC(), "disconnected"); err != nil {
-			h.logger.Warn("failed to mark host disconnected", "host_id", hostID, "err", err)
-		}
 		h.logger.Info("agent disconnected", "host_id", hostID)
 	}()
 
@@ -131,7 +125,7 @@ func (h *Handler) handleHeartbeat(ctx context.Context, hostID string, hb *praeto
 	if hb.GetTimestamp() != nil {
 		t = hb.GetTimestamp().AsTime()
 	}
-	if err := h.hosts.UpdateHeartbeat(ctx, hostID, t, "connected"); err != nil {
+	if err := h.hosts.UpdateHeartbeat(ctx, hostID, t, "online"); err != nil {
 		h.logger.Warn("heartbeat update failed", "host_id", hostID, "err", err)
 		return fmt.Errorf("heartbeat: %w", err)
 	}

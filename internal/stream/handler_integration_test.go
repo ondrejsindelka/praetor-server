@@ -237,7 +237,7 @@ func TestConnectHeartbeatUpdatesDB(t *testing.T) {
 	// Give the server time to process the heartbeat.
 	time.Sleep(300 * time.Millisecond)
 
-	// ---- Step 4: Verify DB was updated to status='connected' ----
+	// ---- Step 4: Verify DB was updated to status='online' ----
 	dbPool, err := db.Connect(ctx, dsn)
 	if err != nil {
 		t.Fatalf("db for verify: %v", err)
@@ -249,8 +249,8 @@ func TestConnectHeartbeatUpdatesDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if h.Status != "connected" {
-		t.Errorf("expected status='connected', got %q", h.Status)
+	if h.Status != "online" {
+		t.Errorf("expected status='online', got %q", h.Status)
 	}
 	if h.LastHeartbeatAt == nil {
 		t.Error("expected last_heartbeat_at to be set after heartbeat")
@@ -261,20 +261,4 @@ func TestConnectHeartbeatUpdatesDB(t *testing.T) {
 		}
 		t.Logf("last_heartbeat_at=%v status=%s", h.LastHeartbeatAt.Format(time.RFC3339), h.Status)
 	}
-
-	// ---- Step 5: Close stream and verify status='disconnected' ----
-	if err := connectStream.CloseSend(); err != nil {
-		t.Logf("CloseSend: %v", err)
-	}
-	// Allow time for the server's disconnect defer to execute.
-	time.Sleep(500 * time.Millisecond)
-
-	h2, err := hostStore.GetByID(ctx, agentID)
-	if err != nil {
-		t.Fatalf("GetByID after disconnect: %v", err)
-	}
-	if h2.Status != "disconnected" {
-		t.Errorf("expected status='disconnected' after EOF, got %q", h2.Status)
-	}
-	t.Logf("post-disconnect status=%s", h2.Status)
 }

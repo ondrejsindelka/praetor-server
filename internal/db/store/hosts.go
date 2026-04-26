@@ -105,7 +105,10 @@ func (s *HostStore) GetByMachineID(ctx context.Context, machineID, orgID string)
 	return scanHost(row)
 }
 
-// UpdateHeartbeat updates last_heartbeat_at and status for the given host.
+// UpdateHeartbeat updates last_heartbeat_at and status for a host.
+// Valid status values: "pending" (initial), "online" (heartbeat received),
+// "offline" (set by background staleness job, not the stream handler),
+// "disabled" (operator action).
 // t is the heartbeat timestamp (use time.Now().UTC() if not provided by the agent).
 func (s *HostStore) UpdateHeartbeat(ctx context.Context, id string, t time.Time, status string) error {
 	_, err := s.pool.Exec(ctx, `
