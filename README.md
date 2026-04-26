@@ -1,5 +1,9 @@
 # praetor-server
 
+[![CI](https://github.com/ondrejsindelka/praetor-server/actions/workflows/ci.yml/badge.svg)](https://github.com/ondrejsindelka/praetor-server/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ondrejsindelka/praetor-server)](https://github.com/ondrejsindelka/praetor-server/releases/latest)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ondrejsindelka/praetor-server)](https://goreportcard.com/report/github.com/ondrejsindelka/praetor-server)
+
 > Status: **pre-alpha — M0 scaffolding only**
 
 The praetor-server is the Go control plane for Praetor — a self-hosted
