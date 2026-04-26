@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,6 +20,7 @@ import (
 
 	praetorv1 "github.com/ondrejsindelka/praetor-proto/gen/go/praetor/v1"
 	"github.com/ondrejsindelka/praetor-server/internal/agent"
+	"github.com/ondrejsindelka/praetor-server/internal/api"
 	"github.com/ondrejsindelka/praetor-server/internal/ca"
 	"github.com/ondrejsindelka/praetor-server/internal/config"
 	"github.com/ondrejsindelka/praetor-server/internal/db"
@@ -94,7 +97,24 @@ func main() {
 		}
 	}()
 
-	// TODO M1.3c: start REST API server
+	apiHandler := api.NewHandler(
+		store.NewHostStore(pool),
+		store.NewTokenStore(pool),
+		cfg.APIKey,
+		cfg.OrgID,
+		logger,
+	)
+	httpServer := &http.Server{
+		Addr:    cfg.HTTPListen,
+		Handler: apiHandler.Routes(),
+	}
+	go func() {
+		logger.Info("HTTP API listening", "addr", cfg.HTTPListen)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("HTTP API error", "err", err)
+		}
+	}()
+
 	// TODO M2: initialize VictoriaMetrics writer
 	// TODO M2: initialize Loki writer
 
@@ -114,6 +134,9 @@ func main() {
 	case <-shutdownCtx.Done():
 		logger.Warn("gRPC server shutdown timed out, forcing stop")
 		grpcServer.Stop()
+	}
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		logger.Warn("HTTP server shutdown error", "err", err)
 	}
 }
 
