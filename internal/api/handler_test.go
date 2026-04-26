@@ -69,7 +69,7 @@ func (f *fakeTokenStore) Revoke(_ context.Context, id string) error {
 const testAPIKey = "test-api-key"
 
 func newTestHandler(hosts *fakeHostStore, tokens *fakeTokenStore) http.Handler {
-	h := api.NewHandler(hosts, tokens, nil, nil, testAPIKey, "default", nil)
+	h := api.NewHandler(hosts, tokens, nil, nil, nil, testAPIKey, "default", nil)
 	return h.Routes()
 }
 

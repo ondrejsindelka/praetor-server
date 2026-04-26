@@ -76,7 +76,8 @@ func startTestServer(t *testing.T) (addr string, testCA *internalca.CA, cleanup 
 
 	reg := stream.NewRegistry()
 	hosts := store.NewHostStore(pool)
-	connectHandler := stream.NewHandler(reg, hosts, slog.Default())
+	// nil for vm/loki/configPush/broker/secEvents — unused by the heartbeat test.
+	connectHandler := stream.NewHandler(reg, hosts, nil, nil, nil, nil, nil, slog.Default())
 	enrollSvc := enrollment.New(pool, testCA, slog.Default())
 
 	svc := &localAgentService{enroll: enrollSvc, connect: connectHandler}
