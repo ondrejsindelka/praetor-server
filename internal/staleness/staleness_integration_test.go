@@ -51,7 +51,7 @@ func TestRunOnce_StaleHostMarkedOffline(t *testing.T) {
 	}
 
 	// Step 2: Run the staleness sweep.
-	if err := staleness.RunOnce(ctx, pool, slog.Default()); err != nil {
+	if err := staleness.RunOnce(ctx, pool, slog.Default(), ""); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -92,7 +92,7 @@ func TestRunOnce_FreshHostRemainsOnline(t *testing.T) {
 	}
 
 	// Step 5: Run the staleness sweep.
-	if err := staleness.RunOnce(ctx, pool, slog.Default()); err != nil {
+	if err := staleness.RunOnce(ctx, pool, slog.Default(), ""); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 

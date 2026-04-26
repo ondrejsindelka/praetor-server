@@ -75,7 +75,7 @@ func main() {
 	defer db.Close(pool)
 	logger.Info("postgres connected")
 
-	go staleness.Run(ctx, pool, logger)
+	go staleness.Run(ctx, pool, logger, cfg.AlertWebhookURL)
 
 	serverCA, err := ca.New(cfg.DataDir, logger, cfg.GRPCServerDNSNames)
 	if err != nil {

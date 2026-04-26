@@ -19,6 +19,7 @@ type Config struct {
 	GRPCServerDNSNames []string `yaml:"grpc_server_dns_names"`
 	APIKey             string   `yaml:"api_key"`
 	OrgID              string   `yaml:"org_id"`
+	AlertWebhookURL    string   `yaml:"alert_webhook_url"`
 }
 
 // Load reads the YAML file at path, applies defaults, and validates required fields.

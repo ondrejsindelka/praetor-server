@@ -3,9 +3,12 @@
 package staleness
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -21,7 +24,9 @@ const (
 
 // Run marks online hosts as offline when last_heartbeat_at is older than
 // HeartbeatTimeout. Runs until ctx is cancelled.
-func Run(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) {
+// webhookURL is optional: if non-empty, a POST notification is sent for each
+// host that transitions to offline.
+func Run(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger, webhookURL string) {
 	ticker := time.NewTicker(CheckInterval)
 	defer ticker.Stop()
 
@@ -36,7 +41,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) {
 			logger.Info("staleness job stopped")
 			return
 		case <-ticker.C:
-			if err := RunOnce(ctx, pool, logger); err != nil {
+			if err := RunOnce(ctx, pool, logger, webhookURL); err != nil {
 				logger.Warn("staleness check failed", "err", err)
 			}
 		}
@@ -46,7 +51,8 @@ func Run(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) {
 // RunOnce performs a single staleness sweep: updates all online hosts whose
 // last_heartbeat_at is older than HeartbeatTimeout to status='offline'.
 // Exported so tests can drive it directly without waiting for the ticker.
-func RunOnce(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error {
+// webhookURL is optional; see Run for details.
+func RunOnce(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger, webhookURL string) error {
 	rows, err := pool.Query(ctx, `
 		UPDATE hosts
 		SET status = 'offline'
@@ -84,7 +90,32 @@ func RunOnce(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error
 			"host_ids", strings.Join(ids, ", "),
 			"hostnames", strings.Join(names, ", "),
 		)
+		for _, h := range hosts {
+			notifyWebhook(ctx, webhookURL, h.id, h.hostname, logger)
+		}
 	}
 
 	return nil
+}
+
+// notifyWebhook POSTs a host_offline event to webhookURL if it is non-empty.
+func notifyWebhook(ctx context.Context, webhookURL, hostID, hostname string, logger *slog.Logger) {
+	if webhookURL == "" {
+		return
+	}
+	body, _ := json.Marshal(map[string]string{
+		"event":    "host_offline",
+		"host_id":  hostID,
+		"hostname": hostname,
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		logger.Warn("webhook notification failed", "err", err)
+		return
+	}
+	resp.Body.Close()
+	logger.Info("webhook notified", "event", "host_offline", "host_id", hostID)
 }
