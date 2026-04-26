@@ -44,6 +44,7 @@ type commandIssuer interface {
 // commandGetter is the interface the Handler uses to retrieve command executions.
 type commandGetter interface {
 	Get(ctx context.Context, id string) (*store.CommandExecution, error)
+	ListByHost(ctx context.Context, hostID string, limit int) ([]*store.CommandExecution, error)
 }
 
 // secEventsLister is the interface the Handler uses to list security events.
@@ -88,6 +89,7 @@ func (h *Handler) Routes() http.Handler {
 	v1.HandleFunc("POST /v1/tokens", h.handleIssueToken)
 	v1.HandleFunc("DELETE /v1/tokens/{id}", h.handleRevokeToken)
 	v1.HandleFunc("POST /v1/commands", h.handleIssueCommand)
+	v1.HandleFunc("GET /v1/commands", h.handleListCommands)
 	v1.HandleFunc("GET /v1/commands/{id}", h.handleGetCommand)
 	v1.HandleFunc("GET /v1/security-events", h.handleListSecurityEvents)
 
@@ -311,6 +313,48 @@ func (h *Handler) handleGetCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toCommandResponse(cmd))
+}
+
+func (h *Handler) handleListCommands(w http.ResponseWriter, r *http.Request) {
+	const defaultLimit = 20
+	const maxLimit = 100
+
+	q := r.URL.Query()
+
+	hostID := q.Get("host_id")
+	if hostID == "" {
+		writeError(w, http.StatusBadRequest, "host_id is required")
+		return
+	}
+
+	limit := defaultLimit
+	if limitStr := q.Get("limit"); limitStr != "" {
+		n, err := strconv.Atoi(limitStr)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
+		}
+		if n > maxLimit {
+			n = maxLimit
+		}
+		limit = n
+	}
+
+	cmds, err := h.commands.ListByHost(r.Context(), hostID, limit)
+	if err != nil {
+		h.logger.Error("list commands", "host_id", hostID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	resp := make([]CommandResponse, len(cmds))
+	for i, c := range cmds {
+		resp[i] = toCommandResponse(c)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"commands": resp,
+		"count":    len(resp),
+	})
 }
 
 func (h *Handler) handleListSecurityEvents(w http.ResponseWriter, r *http.Request) {

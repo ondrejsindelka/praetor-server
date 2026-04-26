@@ -39,6 +39,39 @@ func (f *fakeHostStore) GetByID(_ context.Context, id string) (*store.Host, erro
 	return nil, pgx.ErrNoRows
 }
 
+type fakeCommandStore struct {
+	cmds   []*store.CommandExecution
+	getErr error
+}
+
+func (f *fakeCommandStore) Get(_ context.Context, id string) (*store.CommandExecution, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	for _, c := range f.cmds {
+		if c.ID == id {
+			return c, nil
+		}
+	}
+	return nil, pgx.ErrNoRows
+}
+
+func (f *fakeCommandStore) ListByHost(_ context.Context, hostID string, limit int) ([]*store.CommandExecution, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	var out []*store.CommandExecution
+	for _, c := range f.cmds {
+		if c.HostID == hostID {
+			out = append(out, c)
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 type fakeTokenStore struct {
 	tokens    []*store.EnrollmentToken
 	insertErr error
@@ -277,6 +310,105 @@ func TestRevokeToken(t *testing.T) {
 	}
 	if w.Body.Len() != 0 {
 		t.Errorf("expected empty body on 204, got %q", w.Body.String())
+	}
+}
+
+func newHandlerWithCommands(commands *fakeCommandStore) http.Handler {
+	h := api.NewHandler(&fakeHostStore{}, &fakeTokenStore{}, nil, commands, nil, testAPIKey, "default", nil)
+	return h.Routes()
+}
+
+func TestListCommands_MissingHostID(t *testing.T) {
+	handler := newHandlerWithCommands(&fakeCommandStore{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/commands", nil)
+	req.Header.Set("Authorization", authHeader())
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+	var body map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["error"] == "" {
+		t.Error("expected non-empty error message")
+	}
+}
+
+func TestListCommands_Empty(t *testing.T) {
+	handler := newHandlerWithCommands(&fakeCommandStore{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/commands?host_id=host-1", nil)
+	req.Header.Set("Authorization", authHeader())
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	cmds, ok := body["commands"].([]any)
+	if !ok {
+		t.Fatalf("expected commands array, got %T", body["commands"])
+	}
+	if len(cmds) != 0 {
+		t.Errorf("expected 0 commands, got %d", len(cmds))
+	}
+	if body["count"] != float64(0) {
+		t.Errorf("expected count=0, got %v", body["count"])
+	}
+}
+
+func TestListCommands_WithResults(t *testing.T) {
+	cmds := &fakeCommandStore{
+		cmds: []*store.CommandExecution{
+			{ID: "cmd-1", HostID: "host-1", Status: "completed", IssuedBy: "admin"},
+			{ID: "cmd-2", HostID: "host-1", Status: "pending", IssuedBy: "admin"},
+			{ID: "cmd-3", HostID: "host-2", Status: "completed", IssuedBy: "admin"},
+		},
+	}
+	handler := newHandlerWithCommands(cmds)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/commands?host_id=host-1", nil)
+	req.Header.Set("Authorization", authHeader())
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	list, ok := body["commands"].([]any)
+	if !ok {
+		t.Fatalf("expected commands array, got %T", body["commands"])
+	}
+	if len(list) != 2 {
+		t.Errorf("expected 2 commands for host-1, got %d", len(list))
+	}
+	if body["count"] != float64(2) {
+		t.Errorf("expected count=2, got %v", body["count"])
+	}
+}
+
+func TestListCommands_InvalidLimit(t *testing.T) {
+	handler := newHandlerWithCommands(&fakeCommandStore{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/commands?host_id=host-1&limit=bad", nil)
+	req.Header.Set("Authorization", authHeader())
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }
 

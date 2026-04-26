@@ -64,6 +64,31 @@ func (s *CommandStore) Complete(ctx context.Context, id string, exitCode int, st
 	return nil
 }
 
+// ListByHost returns recent command executions for a host.
+func (s *CommandStore) ListByHost(ctx context.Context, hostID string, limit int) ([]*CommandExecution, error) {
+	const q = `SELECT id, host_id, tier, command_json, reason, issued_by,
+        issued_at, completed_at, exit_code, stdout, stderr,
+        stdout_truncated, stderr_truncated, duration_ms, error, status
+        FROM command_executions WHERE host_id = $1
+        ORDER BY issued_at DESC LIMIT $2`
+	rows, err := s.pool.Query(ctx, q, hostID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("commands: list host %s: %w", hostID, err)
+	}
+	defer rows.Close()
+	var cmds []*CommandExecution
+	for rows.Next() {
+		c := &CommandExecution{}
+		if err := rows.Scan(&c.ID, &c.HostID, &c.Tier, &c.CommandJSON, &c.Reason, &c.IssuedBy,
+			&c.IssuedAt, &c.CompletedAt, &c.ExitCode, &c.Stdout, &c.Stderr,
+			&c.StdoutTruncated, &c.StderrTruncated, &c.DurationMs, &c.Error, &c.Status); err != nil {
+			return nil, fmt.Errorf("commands: list scan: %w", err)
+		}
+		cmds = append(cmds, c)
+	}
+	return cmds, rows.Err()
+}
+
 // Get returns a command execution by ID.
 func (s *CommandStore) Get(ctx context.Context, id string) (*CommandExecution, error) {
 	const q = `SELECT id, host_id, tier, command_json, reason, issued_by,
