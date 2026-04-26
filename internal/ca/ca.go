@@ -96,15 +96,26 @@ func generate(dir string, dnsNames []string, logger *slog.Logger) (*CA, error) {
 		return nil, err
 	}
 
-	ipAddrs := []net.IP{net.ParseIP("127.0.0.1")}
+	var certDNSNames []string
+	var certIPAddrs []net.IP
+	certIPAddrs = append(certIPAddrs, net.ParseIP("127.0.0.1")) // always include loopback
+
+	for _, name := range dnsNames {
+		if ip := net.ParseIP(name); ip != nil {
+			certIPAddrs = append(certIPAddrs, ip)
+		} else {
+			certDNSNames = append(certDNSNames, name)
+		}
+	}
+
 	srvTmpl := &x509.Certificate{
 		SerialNumber: srvSerial,
 		Subject: pkix.Name{
 			CommonName:   "praetor-server",
 			Organization: []string{"Praetor"},
 		},
-		DNSNames:    dnsNames,
-		IPAddresses: ipAddrs,
+		DNSNames:    certDNSNames,
+		IPAddresses: certIPAddrs,
 		NotBefore:   time.Now().Add(-time.Minute),
 		NotAfter:    time.Now().Add(365 * 24 * time.Hour),
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
