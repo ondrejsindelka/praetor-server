@@ -14,6 +14,8 @@ CREATE TABLE hosts (
     labels            JSONB,
     first_seen_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_heartbeat_at TIMESTAMPTZ,
+    -- status valid values: pending (initial after enrollment), online (heartbeat active),
+    -- offline (set by staleness detector, not on TCP disconnect), disabled (operator)
     status            TEXT NOT NULL DEFAULT 'pending',
     agent_version     TEXT,
     org_id            TEXT NOT NULL DEFAULT 'default'

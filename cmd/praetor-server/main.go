@@ -17,10 +17,13 @@ import (
 	"google.golang.org/grpc/status"
 
 	praetorv1 "github.com/ondrejsindelka/praetor-proto/gen/go/praetor/v1"
+	"github.com/ondrejsindelka/praetor-server/internal/agent"
 	"github.com/ondrejsindelka/praetor-server/internal/ca"
 	"github.com/ondrejsindelka/praetor-server/internal/config"
 	"github.com/ondrejsindelka/praetor-server/internal/db"
+	"github.com/ondrejsindelka/praetor-server/internal/db/store"
 	"github.com/ondrejsindelka/praetor-server/internal/enrollment"
+	"github.com/ondrejsindelka/praetor-server/internal/stream"
 )
 
 var version = "dev"
@@ -66,13 +69,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	registry := stream.NewRegistry()
+	connectHandler := stream.NewHandler(registry, store.NewHostStore(pool), logger)
 	enrollSvc := enrollment.New(pool, serverCA, logger)
+	agentSvc := agent.New(enrollSvc, connectHandler)
 
 	grpcServer := grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(serverCA.ServerTLSConfig())),
 		grpc.UnaryInterceptor(mtlsEnforcer),
+		grpc.StreamInterceptor(mtlsStreamEnforcer),
 	)
-	praetorv1.RegisterAgentServiceServer(grpcServer, enrollSvc)
+	praetorv1.RegisterAgentServiceServer(grpcServer, agentSvc)
 
 	lis, err := net.Listen("tcp", cfg.GRPCListen)
 	if err != nil {
@@ -125,4 +132,18 @@ func mtlsEnforcer(ctx context.Context, req any, info *grpc.UnaryServerInfo, hand
 		return nil, status.Errorf(codes.Unauthenticated, "client certificate required for %s", info.FullMethod)
 	}
 	return handler(ctx, req)
+}
+
+// mtlsStreamEnforcer is a stream interceptor that requires a verified client certificate.
+// Unlike Enroll (unary), Connect always requires mTLS — there is no bypass.
+func mtlsStreamEnforcer(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	p, ok := peer.FromContext(ss.Context())
+	if !ok {
+		return status.Errorf(codes.Unauthenticated, "no peer info")
+	}
+	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
+	if !ok || len(tlsInfo.State.VerifiedChains) == 0 {
+		return status.Errorf(codes.Unauthenticated, "client certificate required for streaming RPC %s", info.FullMethod)
+	}
+	return handler(srv, ss)
 }
