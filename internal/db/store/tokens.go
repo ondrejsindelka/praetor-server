@@ -83,14 +83,51 @@ func (s *TokenStore) MarkUsed(ctx context.Context, id, hostID string) error {
 }
 
 // Revoke marks a token as revoked.
+// Returns pgx.ErrNoRows (wrapped) if no token with that id exists or it was already revoked.
 func (s *TokenStore) Revoke(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `
+	tag, err := s.pool.Exec(ctx, `
 		UPDATE enrollment_tokens SET revoked_at = NOW()
 		WHERE id = $1 AND revoked_at IS NULL`, id)
 	if err != nil {
 		return fmt.Errorf("tokens: revoke: %w", err)
 	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("tokens: %w", pgx.ErrNoRows)
+	}
 	return nil
+}
+
+// List returns enrollment tokens for an org.
+// By default excludes used, expired, and revoked tokens.
+func (s *TokenStore) List(ctx context.Context, orgID string, includeExpired, includeRevoked bool) ([]*EnrollmentToken, error) {
+	q := `SELECT id, token_hash, label, org_id, created_by, created_at, expires_at,
+                 used_at, used_by_host_id, revoked_at
+          FROM enrollment_tokens
+          WHERE org_id = $1 AND used_at IS NULL`
+	if !includeExpired {
+		q += ` AND (expires_at > NOW())`
+	}
+	if !includeRevoked {
+		q += ` AND revoked_at IS NULL`
+	}
+	q += ` ORDER BY created_at DESC`
+
+	rows, err := s.pool.Query(ctx, q, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("tokens: list: %w", err)
+	}
+	defer rows.Close()
+
+	var tokens []*EnrollmentToken
+	for rows.Next() {
+		t := &EnrollmentToken{}
+		if err := rows.Scan(&t.ID, &t.TokenHash, &t.Label, &t.OrgID, &t.CreatedBy,
+			&t.CreatedAt, &t.ExpiresAt, &t.UsedAt, &t.UsedByHostID, &t.RevokedAt); err != nil {
+			return nil, fmt.Errorf("tokens: list scan: %w", err)
+		}
+		tokens = append(tokens, t)
+	}
+	return tokens, rows.Err()
 }
 
 // ListActive returns non-used, non-revoked, non-expired tokens for orgID.

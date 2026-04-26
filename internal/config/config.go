@@ -17,6 +17,8 @@ type Config struct {
 	LokiURL            string   `yaml:"loki_url"`
 	DataDir            string   `yaml:"data_dir"`
 	GRPCServerDNSNames []string `yaml:"grpc_server_dns_names"`
+	APIKey             string   `yaml:"api_key"`
+	OrgID              string   `yaml:"org_id"`
 }
 
 // Load reads the YAML file at path, applies defaults, and validates required fields.
@@ -45,6 +47,14 @@ func Load(path string) (*Config, error) {
 	}
 	if len(cfg.GRPCServerDNSNames) == 0 {
 		cfg.GRPCServerDNSNames = []string{"localhost"}
+	}
+
+	if cfg.OrgID == "" {
+		cfg.OrgID = "default"
+	}
+	// api_key has no default — it's a secret, must be set explicitly
+	if cfg.APIKey == "" {
+		return nil, fmt.Errorf("config: api_key is required")
 	}
 
 	if cfg.PostgresDSN == "" {
