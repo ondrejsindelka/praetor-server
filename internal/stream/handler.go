@@ -14,7 +14,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	praetorv1 "github.com/ondrejsindelka/praetor-proto/gen/go/praetor/v1"
+
 	"github.com/ondrejsindelka/praetor-server/internal/db/store"
+	"github.com/ondrejsindelka/praetor-server/internal/storage/loki"
+	"github.com/ondrejsindelka/praetor-server/internal/storage/victoriametrics"
 )
 
 const pingInterval = 30 * time.Second
@@ -24,14 +27,18 @@ type Handler struct {
 	praetorv1.UnimplementedAgentServiceServer
 	registry *Registry
 	hosts    *store.HostStore
+	vm       *victoriametrics.Writer
+	loki     *loki.Writer
 	logger   *slog.Logger
 }
 
 // NewHandler creates a Connect stream handler.
-func NewHandler(registry *Registry, hosts *store.HostStore, logger *slog.Logger) *Handler {
+func NewHandler(registry *Registry, hosts *store.HostStore, vm *victoriametrics.Writer, lokiWriter *loki.Writer, logger *slog.Logger) *Handler {
 	return &Handler{
 		registry: registry,
 		hosts:    hosts,
+		vm:       vm,
+		loki:     lokiWriter,
 		logger:   logger,
 	}
 }
@@ -111,8 +118,22 @@ func (h *Handler) handleMessage(stream AgentStream, hostID string, msg *praetorv
 	case *praetorv1.AgentMessage_Heartbeat:
 		return h.handleHeartbeat(stream.Context(), hostID, p.Heartbeat)
 	case *praetorv1.AgentMessage_MetricBatch:
-		// M2: forward to VictoriaMetrics.
-		h.logger.Debug("metric_batch received (M2 TODO)", "host_id", hostID, "count", len(p.MetricBatch.GetMetrics()))
+		go func() {
+			ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := h.vm.Write(ctx2, hostID, p.MetricBatch); err != nil {
+				h.logger.Warn("failed to write metrics to VM", "host_id", hostID, "err", err)
+			}
+		}()
+		return nil
+	case *praetorv1.AgentMessage_LogBatch:
+		go func() {
+			ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := h.loki.Write(ctx2, hostID, p.LogBatch); err != nil {
+				h.logger.Warn("failed to write logs to Loki", "host_id", hostID, "err", err)
+			}
+		}()
 		return nil
 	default:
 		h.logger.Warn("unknown agent message type", "host_id", hostID)
