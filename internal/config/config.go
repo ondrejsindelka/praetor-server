@@ -20,6 +20,7 @@ type Config struct {
 	APIKey             string   `yaml:"api_key"`
 	OrgID              string   `yaml:"org_id"`
 	AlertWebhookURL    string   `yaml:"alert_webhook_url"`
+	WatchdogEnabled    bool     `yaml:"watchdog_enabled"`
 }
 
 // Load reads the YAML file at path, applies defaults, and validates required fields.

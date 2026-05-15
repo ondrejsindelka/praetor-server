@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -33,6 +34,7 @@ import (
 	lokiwriter "github.com/ondrejsindelka/praetor-server/internal/storage/loki"
 	vmwriter "github.com/ondrejsindelka/praetor-server/internal/storage/victoriametrics"
 	"github.com/ondrejsindelka/praetor-server/internal/stream"
+	watchdogcrypto "github.com/ondrejsindelka/praetor-server/internal/watchdog/crypto"
 )
 
 var version = "dev"
@@ -49,6 +51,14 @@ func main() {
 		case "config":
 			runConfigCmd(os.Args[2:])
 			return
+		case "generate-master-key":
+			key, err := watchdogcrypto.GenerateMasterKey()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "generate-master-key: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println(key)
+			return
 		}
 	}
 
@@ -62,6 +72,18 @@ func main() {
 	if err != nil {
 		logger.Error("failed to load config", "err", err)
 		os.Exit(1)
+	}
+
+	if cfg.WatchdogEnabled {
+		masterKey := os.Getenv("PRAETOR_MASTER_KEY")
+		if masterKey == "" {
+			logger.Error("watchdog_enabled requires PRAETOR_MASTER_KEY env var")
+			os.Exit(1)
+		}
+		if _, err := watchdogcrypto.NewCrypto(masterKey); err != nil {
+			logger.Error("invalid PRAETOR_MASTER_KEY", "err", err)
+			os.Exit(1)
+		}
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -124,6 +146,8 @@ func main() {
 		secEventStore,
 		cfg.APIKey,
 		cfg.OrgID,
+		cfg.VictoriaMetricsURL,
+		cfg.LokiURL,
 		logger,
 	)
 	httpServer := &http.Server{
