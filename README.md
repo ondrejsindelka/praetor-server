@@ -1,6 +1,9 @@
 # praetor-server
 
-> Status: **pre-alpha — M0 scaffolding only**
+[![CI](https://github.com/ondrejsindelka/praetor-server/actions/workflows/ci.yml/badge.svg)](https://github.com/ondrejsindelka/praetor-server/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
+
+> **Status: pre-alpha — M1.3 in progress** (CA init, Enroll RPC, token CLI, Connect stream)
 
 The praetor-server is the Go control plane for Praetor — a self-hosted
 observability and security platform with a native MCP interface for LLM agents.
@@ -140,9 +143,15 @@ to offline storage. If lost, all agent certificates must be reissued.
 
 ## Milestones
 
-- **M0** (current) — scaffolding: module layout, config loader, placeholder
-  main with signal handling, Makefile, CI. No gRPC, no DB, no business logic.
-- **M1** — walking skeleton: Enroll + Connect gRPC handlers, Postgres schema
-  (`hosts`, `agent_identities`, `enrollment_tokens`), REST `GET /v1/hosts`.
-- See the [project roadmap](https://github.com/ondrejsindelka/praetor) for
-  full milestone details.
+| Milestone | Status | Description |
+|-----------|--------|-------------|
+| M0 | ✅ Done | Scaffolding: module layout, config loader, placeholder main, Makefile, CI |
+| M1.2 | ✅ Done | Postgres schema (`hosts`, `agent_identities`, `enrollment_tokens`) + goose migrations + docker-compose |
+| M1.3 | 🚧 In progress | CA init, Enroll RPC handler, token CLI subcommands, Connect stream handler |
+| M1.4 | ⏭ Next | REST `GET /v1/hosts`, `GET /v1/hosts/:id` |
+
+See the [project roadmap](https://github.com/ondrejsindelka/praetor/blob/main/ROADMAP.md) for full details.
+
+## License
+
+Licensed under the [Apache License 2.0](./LICENSE).
