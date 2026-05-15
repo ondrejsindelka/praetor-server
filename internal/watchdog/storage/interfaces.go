@@ -134,6 +134,7 @@ type RuleStateRepo interface {
 	Upsert(ctx context.Context, s *RuleState) error
 	Get(ctx context.Context, ruleID, hostID string) (*RuleState, error)
 	ListByRule(ctx context.Context, ruleID string) ([]*RuleState, error)
+	ListAll(ctx context.Context) ([]*RuleState, error)
 	BulkUpsert(ctx context.Context, states []*RuleState) error
 }
 

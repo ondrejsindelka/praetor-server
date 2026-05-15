@@ -71,6 +71,26 @@ func (r *RuleStatePostgres) ListByRule(ctx context.Context, ruleID string) ([]*s
 	return states, rows.Err()
 }
 
+// ListAll returns all rule state records across all rules and hosts.
+func (r *RuleStatePostgres) ListAll(ctx context.Context) ([]*storage.RuleState, error) {
+	const q = `SELECT ` + ruleStateCols + ` FROM watchdog_rule_state`
+	rows, err := r.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("rule_state: list all: %w", err)
+	}
+	defer rows.Close()
+
+	var states []*storage.RuleState
+	for rows.Next() {
+		s, err := scanRuleState(rows)
+		if err != nil {
+			return nil, fmt.Errorf("rule_state: scan: %w", err)
+		}
+		states = append(states, s)
+	}
+	return states, rows.Err()
+}
+
 // BulkUpsert upserts multiple rule states in a single transaction.
 func (r *RuleStatePostgres) BulkUpsert(ctx context.Context, states []*storage.RuleState) error {
 	if len(states) == 0 {

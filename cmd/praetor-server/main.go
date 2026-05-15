@@ -146,8 +146,6 @@ func main() {
 		secEventStore,
 		cfg.APIKey,
 		cfg.OrgID,
-		cfg.VictoriaMetricsURL,
-		cfg.LokiURL,
 		logger,
 	)
 	httpServer := &http.Server{
